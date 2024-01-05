@@ -18,8 +18,8 @@ def parse_arg():
     parser.add_argument("--gt_type", default="property", type=str)
     parser.add_argument("--feature_extrator", default="clip", type=str)
 
+    parser.add_argument("--cuda_device", default="cuda:0", type=str)
     parser.add_argument("--lambda_c", default=1)
-
     parser.add_argument("--lambda_t", default=10)
 
     parser.add_argument("--overwrite_cache", action="store_true", help="Overwrite the cached training and evaluation sets")
@@ -27,11 +27,7 @@ def parse_arg():
 
 
     parser.add_argument(
-        "--dir_prepro",
-        default=None,
-        type=str,
-        required=True,
-        help="The prepro data dir. Should contain the training files.",
+        "--data_dir", default=None, type=str, required=True, help="The prepro data dir. Should contain the training files.",
     )
     parser.add_argument(
         "--path_ans_list",

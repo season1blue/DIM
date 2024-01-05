@@ -15,7 +15,7 @@ export MODE="train"
 export EPOCHS=300  #300
 export LOGGING_STEPS=449
 export SAVE_STEPS=500 #1000  # 0 represent not save
-export BATCH_SIZE=128
+export BATCH_SIZE=64
 export MAX_SENT_LENGTH=32
 export DROPOUT=0.4
 export DECAY=0.001
@@ -23,7 +23,7 @@ export DECAY=0.001
 export IMG_FEAT_SIZE=512
 export TEXT_FEAT_SIZE=512
 
-export LR=5e-4
+export LR=5e-5
 
 export NUM_ATTEN_LAYERS=2
 export NEG_SAMPLE_NUM=1
@@ -42,7 +42,7 @@ export GPU=0
 export SEED=114514
 
 
-python $DIR_CODE/train.py --dir_prepro $DIR_PREPRO \
+python3 $DIR_CODE/train.py --data_dir "../../data/richpedia" \
 --path_ans_list $PATH_ANS \
 --dir_img_feat $DIR_PREPRO \
 --dir_neg_feat $DIR_PREPRO \
@@ -80,4 +80,4 @@ python $DIR_CODE/train.py --dir_prepro $DIR_PREPRO \
 --dataset $DATASET \
 --img_path $IMG_PATH \
 --gt_type $GT_TYPE \
-#--overwrite_cache
+# --overwrite_cache

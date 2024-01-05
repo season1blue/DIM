@@ -107,6 +107,10 @@ class Wikipedia():
             image_list.append(image)
         return image_list
 
+
+    
+
+
     def convert_examples_to_features(self, examples):
         features = []
         for (ex_index, example) in tqdm(enumerate(examples), total=len(examples), ncols=80):

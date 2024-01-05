@@ -1,31 +1,53 @@
-import pixellib
-from pixellib.torchbackend.instance import instanceSegmentation
-from deepface import DeepFace
-import json
-import os
-import sys
-from tqdm import tqdm
-import os
+# import torch
+# from PIL import Image
+# device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
+# from transformers import Blip2Processor, Blip2ForConditionalGeneration, AutoProcessor
 
-img_name = "41487.jpg"
-img_id = img_name.split(".")[0]
+# image_list = [
+#     Image.open("3142.jpg").convert('RGB'),
+#     Image.open("509.jpeg").convert('RGB'),
+#     Image.open("test2.png").convert('RGB')
+# ]
 
-ins = instanceSegmentation()
-ins.load_model("../../data/pretrain_models/pointrend_resnet50.pkl")
-target_classes = ins.select_target_classes(person=True)
-r, output = ins.segmentImage(img_name, show_bboxes=True, extract_segmented_objects=True, segment_target_classes = target_classes, save_extracted_objects=True, output_image_name=None, output_path="seg_result", img_id='41487')
-# print(r['extracted_objects'])
-# print(r["object_counts"])
+# processor = AutoProcessor.from_pretrained("../../data/pretrain_models/blip2-opt-2.7b")
+# model = Blip2ForConditionalGeneration.from_pretrained("../../data/pretrain_models/blip2-opt-2.7b")
+# model.to(device)
 
-objects_num = r["object_counts"]["person"]
-for i in range(1, objects_num+1):
-    detection_id = str(img_id) + '_' + str(i)
-    input_name = detection_id + '.jpg'
+# question_list = [
+#     "Question:  Who is he? Answer: ", 
+#     "Question: What is the detail in picture? Answer: "
+#     ]
 
-    detection_name = "detection/{}.json".format(detection_id)
-    objs = DeepFace.analyze(img_path="seg_result/{}".format(input_name), actions=['age', 'gender', 'race', 'emotion'],
-                            enforce_detection=False, silent=True)
+# for raw_image in image_list:
+#     inputs = processor(raw_image, return_tensors="pt").to(device, torch.float16)
 
-    json.dump(objs, open(detection_name, 'w'), indent=2)
+#     generated_ids = model.generate(**inputs, max_new_tokens=20)
+#     generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+#     print(generated_text)
 
-# docker run -itd --name deepface -v E:\Season\MyCode\MM\Face\deepface:/home/Face/deepface b291dda7ce8d /bin /bash
+
+import torch
+from PIL import Image
+device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
+from transformers import Blip2Processor, Blip2ForConditionalGeneration, AutoProcessor
+
+image_list = [
+    Image.open("3142.jpg").convert('RGB'),
+    Image.open("509.jpeg").convert('RGB'),
+    Image.open("test2.png").convert('RGB')
+]
+
+processor = AutoProcessor.from_pretrained("../../data/pretrain_models/blip2-opt-2.7b")
+model = Blip2ForConditionalGeneration.from_pretrained("../../data/pretrain_models/blip2-opt-2.7b")
+model.to(device)
+
+question = "Question:  Who are the characters in the picture? Answer: "
+
+for raw_image in image_list:
+    inputs = processor(raw_image, text=question, return_tensors="pt").to(device, torch.float16)
+
+    generated_ids = model.generate(**inputs, max_new_tokens=20)
+    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+    print(generated_text)
+
+

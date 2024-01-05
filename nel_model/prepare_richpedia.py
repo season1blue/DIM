@@ -33,7 +33,7 @@ class InputExample(object):
 class InputFeatures:
     """A single training/test example for token classification."""
 
-    def __init__(self, answer_id, img_id, mentions, key_id, text_feature, total_feature, mention_feature,
+    def __init__(self, answer_id, img_id, mentions, key_id, text_feature, total_feature, mention_feature, text_mask, mention_mask,
                  segement_feature, profile_feature):
         self.answer_id = answer_id
         self.img_id = img_id
@@ -41,6 +41,8 @@ class InputFeatures:
         self.key_id = key_id
         self.text_feature = text_feature
         self.total_feature = total_feature
+        self.text_mask = text_mask
+        self.mention_mask = mention_feature
         self.mention_feature = mention_feature
         self.segement_feature=segement_feature
         self.profile_feature=profile_feature
@@ -124,9 +126,9 @@ class Richpedia():
         for (ex_index, example) in tqdm(enumerate(examples), total=len(examples), ncols=80):
             # Text
             input_sent = example.mentions + " [SEP] " + example.sent
-            sent_ids = clip_tokenize(input_sent, truncate=True)  # 截断过长的
+            sent_ids, text_mask  = clip_tokenize(input_sent, truncate=True)  # 截断过长的
             sent_ids = sent_ids.to(self.device)
-            mention = clip_tokenize(example.mentions, truncate=True)
+            mention, mention_mask = clip_tokenize(example.mentions, truncate=True)
             mention = mention.to(self.device)
             with torch.no_grad():
                 self.model.to(self.device)
@@ -169,6 +171,8 @@ class Richpedia():
                     key_id=example.guk,
                     text_feature=text_feature,
                     mention_feature=mention_feature,
+                    text_mask=text_mask,
+                    mention_mask=mention_mask,
                     total_feature=total_feature,
                     segement_feature=image_features,
                     profile_feature=profile_features
@@ -192,6 +196,9 @@ class Richpedia():
                 self.text_model.to(self.device)
                 text_feature = self.text_model(**sent_ids)["last_hidden_state"].to(self.device)  # text_features 1,512
                 mention_feature = self.text_model(**mention)["last_hidden_state"].to(self.device)
+                # text_outputs = self.text_model(**sent_ids)
+                # print(text_outputs.keys())
+                # exit()
 
             # Image
             image_features_list = []
@@ -229,6 +236,8 @@ class Richpedia():
                     key_id=example.guk,
                     text_feature=text_feature,
                     mention_feature=mention_feature,
+                    text_mask=text_mask,
+                    mention_mask=mention_mask,
                     total_feature=total_feature,
                     segement_feature=image_features,
                     profile_feature=profile_features

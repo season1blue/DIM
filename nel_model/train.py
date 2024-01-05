@@ -27,11 +27,12 @@ from transformers import (
 from dataset import NELDataset, train_collate_fn, eval_collate_fn
 from dataset import person_collate_eval, person_collate_train
 from nel import NELModel
-from metric_topk import cal_top_k, faiss_cal_topk
+from metric_topk import cal_top_k
 from time import time
 from args import parse_arg
 from dataset import load_and_cache_examples
 import h5py
+from utils import build_config
 
 # 1、创建一个logger
 logger = logging.getLogger('mylogger')
@@ -143,6 +144,7 @@ def train(args, train_dataset, model, nel_model, answer_list, tokenizer, fold=""
     nel_model.zero_grad()
 
     set_seed(args)  # Added here for reproductibility
+    
 
     epoch_start_time = time()
     step_start_time = None
@@ -405,10 +407,7 @@ def main():
     args = parse_arg()
     args.n_gpu = 0
 
-    args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    logger.warning(
-        "========Process rank: %s, device: %s，16-bits training: %s========", args.local_rank, args.device, args.fp16)
+    args.device = torch.device(args.cuda_device if torch.cuda.is_available() else "cpu")
 
     # Set seed
     set_seed(args)
@@ -440,7 +439,8 @@ def main():
         )
 
         # Initialize the nel model
-        nel_model = NELModel(args)
+        text_config, vision_config = build_config()
+        nel_model = NELModel(args, text_config, vision_config)
         path_nel_state = join(args.model_name_or_path, "nel_model.pkl")
         if exists(path_nel_state):
             logger.info(f"Load nel model state dict from {path_nel_state}")

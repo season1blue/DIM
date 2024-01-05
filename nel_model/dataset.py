@@ -24,8 +24,6 @@ from prepare_richpedia import Richpedia
 from prepare_wikiperson import Wikiperson
 from prepare_wikidiverse import Wikidiverse
 
-from prepare_blip.blip_wikipedia import Wikipedia_blip
-
 from entity import Entity
 from os.path import join, exists
 
@@ -37,8 +35,6 @@ def train_collate_fn(batch):
 
     for b in batch:
         answer_id, mention_feature, text_feature, segement_feature, total_feature, profile_feature, pos_sample, neg_sample = b.values()
-        # print(neg_sample.size())
-        # exit()
         mention_feature_list.append(mention_feature)
         text_feature_list.append(text_feature)
         segement_feature_list.append(segement_feature)
@@ -75,6 +71,7 @@ def train_collate_fn(batch):
 
     segement_feature = torch.stack(segement_feature_list)
     profile_feature = torch.stack(profile_feature_list)
+
 
     return {
         "mention_feature": mention_feature,
@@ -114,6 +111,7 @@ def eval_collate_fn(batch):
     mention_feature = torch.stack(mention_feature_list)
     total_feature = torch.stack(total_feature_list)
     text_feature = torch.stack(text_feature_list)
+
     pos_sample = torch.stack(pos_sample_list)
     neg_sample = torch.stack(neg_sample_list)
     search_res = torch.stack(search_res_list)
@@ -262,7 +260,7 @@ class NELDataset(Dataset):
 
         # return search results
         if self.contain_search_res:
-            qids_searched = self.search_res[self.all_mentions[idx]]
+            qids_searched = self.search_res[self.all_mentions[idx]][:10]
             qids_searched_map = [self.neg_mapping[qid] for qid in qids_searched]
             sample["search_res"] = torch.tensor(np.array([self.entity_features[qsm] for qsm in qids_searched_map]))
             # print(sample["search_res"].size())  #Bathc_size*hidden_size 32*768
@@ -511,9 +509,6 @@ class PersonDataset(Dataset):
 
 def load_and_cache_examples(args, tokenizer, answer_list, mode, dataset="wiki", logger=None):
     data_processor = None
-    # if args.feature_extrator == "blip":
-    #     if dataset == "wiki":
-    #         data_processor = Wikipedia_blip()
 
     # elif args.feature_extrator == "clip":
     if dataset == "wiki":
@@ -529,16 +524,16 @@ def load_and_cache_examples(args, tokenizer, answer_list, mode, dataset="wiki", 
         exit()
 
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.dir_prepro, "cached_{}_{}_{}".format(mode, args.dataset, args.feature_extrator))
-    # entity_features_file = os.path.join(args.dir_prepro, "entity_{}".format(args.dataset))
+    cached_features_file = os.path.join(args.data_dir, "cached_{}_{}_{}".format(mode, args.dataset, args.feature_extrator))
+    # entity_features_file = os.path.join(args.data_dir, "entity_{}".format(args.dataset))
 
     guks = []
     if mode != 'test' and os.path.exists(cached_features_file) and not args.overwrite_cache:
         features = torch.load(cached_features_file)
     else:
-        logger.info("Creating features %s at %s" % (cached_features_file, args.dir_prepro))
+        logger.info("Creating features %s at %s" % (cached_features_file, args.data_dir))
 
-        examples = data_processor.read_examples_from_file(args.dir_prepro, mode)
+        examples = data_processor.read_examples_from_file(args.data_dir, mode)
         if args.feature_extrator != "clip":
             features = data_processor.convert_examples_to_features_textmodel(examples)
         else:
@@ -575,6 +570,7 @@ def load_and_cache_examples(args, tokenizer, answer_list, mode, dataset="wiki", 
         all_total_feature = [f.total_feature for f in features]
         all_segement_feature = [f.segement_feature for f in features]
         all_profile_feature = [f.profile_feature for f in features]
+
 
         all_answer_id = [f.answer_id for f in features]
         all_img_id = [f.img_id for f in features]

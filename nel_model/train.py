@@ -1,15 +1,12 @@
 import os
 import json
 import logging
-import argparse
 import numpy as np
 import torch
 import random
-import pickle
 from torch import nn
 from torch.utils.data import DataLoader, RandomSampler, DistributedSampler, SequentialSampler
 from torch.utils.tensorboard import SummaryWriter
-# from tqdm import tqdm, trange
 from os.path import join, exists
 from glob import glob
 
@@ -32,7 +29,6 @@ from time import time
 from args import parse_arg
 from dataset import load_and_cache_examples
 import h5py
-from utils import build_config
 
 # 1、创建一个logger
 logger = logging.getLogger('mylogger')
@@ -194,7 +190,7 @@ def train(args, train_dataset, model, nel_model, answer_list, tokenizer, fold=""
                     "text": batch["text_feature"].float(),
                     "total": batch["total_feature"].float(),
                     "segement": batch["segement_feature"].float(),
-                    "profile": batch["profile_feature"].float(),
+                    "caption": batch["caption_feature"].float(),
                     "pos_feats": batch["pos"],
                     "neg_feats": batch["neg"]
                 }
@@ -328,7 +324,7 @@ def evaluate(args, model, nel_model, answer_list, tokenizer, mode, prefix=""):
                     "text": batch["text_feature"].float(),
                     "total": batch["total_feature"].float(),
                     "segement": batch["segement_feature"].float(),
-                    "profile": batch["profile_feature"].float(),
+                    "caption": batch["caption_feature"].float(),
                     "pos_feats": batch["pos"],
                     "neg_feats": batch["neg"]
                 }
@@ -342,8 +338,8 @@ def evaluate(args, model, nel_model, answer_list, tokenizer, mode, prefix=""):
             tmp_eval_loss = tmp_eval_loss.mean()
             eval_loss += tmp_eval_loss
 
-            pos_feat_trans = nel_model.trans(batch["pos"])
-            neg_feat_trans = nel_model.trans(batch["search_res"])
+            pos_feat_trans = batch["pos"]
+            neg_feat_trans = batch["search_res"]
 
             rank_list, sim_p, sim_n = cal_top_k(args, query, pos_feat_trans, neg_feat_trans)
 
@@ -439,8 +435,7 @@ def main():
         )
 
         # Initialize the nel model
-        text_config, vision_config = build_config()
-        nel_model = NELModel(args, text_config, vision_config)
+        nel_model = NELModel(args)
         path_nel_state = join(args.model_name_or_path, "nel_model.pkl")
         if exists(path_nel_state):
             logger.info(f"Load nel model state dict from {path_nel_state}")

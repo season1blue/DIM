@@ -1,17 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-# from torch.nn import TripletMarginLoss
-# from word_level import WordLevel
-# from phrase_level import PhraseLevel
-# from sent_level import SentLevel
-# from gated_fuse import GatedFusion
-# from recursive_encoder import RecursiveEncoder
-from circle_loss import CircleLoss
 from triplet_loss import TripletMarginLoss, NpairLoss
 from info_nce import InfoNCE
-from interaction import BertLayer, CLIPEncoderLayer, Generator
-from torch import functional as F
 
 
 class GatedFusion(nn.Module):
@@ -104,7 +95,7 @@ class ClipLoss(nn.Module):
 
 
 class NELModel(nn.Module):
-    def __init__(self, args, text_config=None, vision_config=None):
+    def __init__(self, args):
         super(NELModel, self).__init__()
         self.hidden_size = args.hidden_size
         self.dropout = args.dropout
@@ -113,17 +104,6 @@ class NELModel(nn.Module):
         self.text_feat_size = args.text_feat_size
         self.img_feat_size = args.img_feat_size
         self.feat_cate = args.feat_cate.lower()
-
-        self.lambda_c = args.lambda_c
-        self.lambda_t = args.lambda_t
-
-
-        self.split_trans = nn.Sequential(
-            nn.Linear(self.img_feat_size, self.hidden_size),
-            nn.ReLU(),
-            nn.LayerNorm(self.hidden_size),
-            nn.Dropout(self.dropout)
-        )
 
         self.img_trans = nn.Sequential(
             nn.Linear(self.img_feat_size, self.hidden_size),
@@ -143,10 +123,6 @@ class NELModel(nn.Module):
             nn.Dropout(self.dropout),
             nn.Linear(self.hidden_size, self.output_size),
         )
-        self.mention_mix_trans = nn.Sequential(
-            nn.Dropout(self.dropout),
-            nn.Linear(self.hidden_size * 2, self.hidden_size),
-        )
 
         self.img_att = nn.MultiheadAttention(self.hidden_size, args.nheaders, batch_first=True)
         self.text_att = nn.MultiheadAttention(self.hidden_size, args.nheaders, batch_first=True)
@@ -157,19 +133,14 @@ class NELModel(nn.Module):
         self.loss_margin = args.loss_margin
         self.sim = args.similarity
         self.loss = NpairLoss(args)
+        # self.loss = TripletMarginLoss()
         self.clip_loss = ClipLoss(args)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-
-        self.text_encoder = BertLayer(text_config)
-        self.vision_encoder = CLIPEncoderLayer(vision_config)
-
-        self.text_decoder = Generator(text_config, 1)
-        self.vision_decoder = Generator(vision_config, 1)
 
         self.att_method = "encoder"
         self.align_method = "clip"
 
-    def forward(self, model_type, mention=None, text=None, total=None, segement=None, profile=None, scene=None, pos_feats=None, neg_feats=None):
+    def forward(self, model_type, mention=None, text=None, total=None, segement=None, caption=None, scene=None, pos_feats=None, neg_feats=None):
         """
             ------------------------------------------
             Args:
@@ -180,42 +151,20 @@ class NELModel(nn.Module):
                 neg_feats(optional): (batch_size, n_neg, output_size)
             Returns:
         """
-        batch_size = mention.size(0)
-
         mention_trans = self.text_trans(mention)
         text_trans = self.text_trans(text) 
-        profile_trans = self.text_trans(profile).max(dim=1)[0].unsqueeze(1)
-
-        
-        segement_trans = self.img_trans(segement)
-        total_trans = self.img_trans(total)
+        caption_trans = self.text_trans(caption)
         # print(mention_trans.size(), text_trans.size(), total_trans.size(), segement_trans.size())  # torch.Size([128, 1, 512]) torch.Size([128, 1, 512]) torch.Size([128, 1, 512]) torch.Size([128, 11, 512])
-        # print(profile_trans.size())  # 128, 1, 512
+        # print(caption_trans.size())  # 128, 1, 512
 
-        if self.att_method == "att":
-            text_att, _ = self.img_att(mention_trans, text_trans, text_trans)
-            vision_att, _ = self.img_att(mention_trans, segement_trans, segement_trans)
-            profile_att, _ = self.text_att(mention_trans, profile_trans, profile_trans)
-        else:
-            text_att, _ = self.img_att(mention_trans, text_trans, text_trans)
-            vision_att, _ = self.img_att(mention_trans, segement_trans, segement_trans)
-            profile_att, _ = self.text_att(mention_trans, profile_trans, profile_trans)
-
-            text_att = self.text_decoder(text_att)
-            vision_att = self.vision_decoder(vision_att)
-
-            
-
-        query =  mention_trans + text_att + vision_att
+        text_att, _ = self.img_att(mention_trans, text_trans, text_trans)
+        caption_att, _ = self.img_att(mention_trans, caption_trans, caption_trans)
+        
+        query =  mention + text + total + caption_trans
         query = self.pedia_out_trans(query).squeeze(1)  # 128, 512
-
 
         # 注意这里的维度，如果不满足TripletMarginLoss的维度设置，会存在broadcast现象，导致性能大幅下降 全都要是 [bsz*hs] query 128, 512        pos 128, 1, 512     neg 128, 1, 512
         triplet_loss = self.loss(query, pos_feats.squeeze(1), neg_feats.squeeze(1))
         loss = triplet_loss
 
         return loss, query
-
-    def trans(self, x):
-        return x
-        # return self.text_trans(x)

@@ -8,13 +8,14 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 import clip
 from tqdm import tqdm
 
-from mlip.clip import load as clip_load
-from mlip.clip import tokenize as clip_tokenize
+from clip import load as clip_load
+from clip import tokenize as clip_tokenize
 from pixellib.torchbackend.instance import instanceSegmentation
 
 import warnings
 from args import parse_arg
 from transformers import AutoTokenizer, DebertaModel
+from transformers import Blip2Processor, Blip2ForConditionalGeneration, AutoProcessor
 
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
@@ -33,19 +34,16 @@ class InputExample(object):
 class InputFeatures:
     """A single training/test example for token classification."""
 
-    def __init__(self, answer_id, img_id, mentions, key_id, text_feature, total_feature, mention_feature, text_mask, mention_mask,
-                 segement_feature, profile_feature):
+    def __init__(self, answer_id, img_id, mentions, key_id, text_feature, total_feature, mention_feature,  segement_feature, caption_feature):
         self.answer_id = answer_id
         self.img_id = img_id
         self.mentions = mentions
         self.key_id = key_id
         self.text_feature = text_feature
         self.total_feature = total_feature
-        self.text_mask = text_mask
-        self.mention_mask = mention_feature
         self.mention_feature = mention_feature
         self.segement_feature=segement_feature
-        self.profile_feature=profile_feature
+        self.caption_feature=caption_feature
 
 
 class Richpedia():
@@ -73,6 +71,9 @@ class Richpedia():
         text_model_path = os.path.join(args.pretrain_model_path, "deberta")
         self.text_tokenizer = AutoTokenizer.from_pretrained(text_model_path, add_prefix_space=True)
         self.text_model = DebertaModel.from_pretrained(text_model_path)
+        
+        self.caption_processor = AutoProcessor.from_pretrained("../../data/pretrain_models/blip2-opt-2.7b")
+        self.caption_model = Blip2ForConditionalGeneration.from_pretrained("../../data/pretrain_models/blip2-opt-2.7b")
 
     def read_examples_from_file(self, data_dir, mode):
         file_path = os.path.join(data_dir, "{}.json".format(mode))
@@ -121,17 +122,34 @@ class Richpedia():
             image_list.append(image)
         return image_list
 
+    def convert_caption(self, raw_image):
+        self.caption_model.to(self.device)
+
+        question = "Question:  Who are the characters in the picture? Answer: "
+        inputs = self.caption_processor(raw_image, text=question, return_tensors="pt").to(self.device, torch.float16)
+        generated_ids = self.caption_model.generate(**inputs, max_new_tokens=20)
+        generated_text = self.caption_processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+
+        return generated_text
+
     def convert_examples_to_features(self, examples):
         features = []
         for (ex_index, example) in tqdm(enumerate(examples), total=len(examples), ncols=80):
             # Text
             input_sent = example.mentions + " [SEP] " + example.sent
-            sent_ids, text_mask  = clip_tokenize(input_sent, truncate=True)  # 截断过长的
+            sent_ids = clip_tokenize(input_sent, truncate=True)  # 截断过长的
             sent_ids = sent_ids.to(self.device)
-            mention, mention_mask = clip_tokenize(example.mentions, truncate=True)
+            mention = clip_tokenize(example.mentions, truncate=True)
             mention = mention.to(self.device)
+            
+            caption = self.convert_caption(Image.open(img_path))
+            print(img_path, caption)
+            
             with torch.no_grad():
                 self.model.to(self.device)
+                caption_feature = self.model.encode_text(
+                    clip_tokenize(caption, truncate=True).to(self.device)
+                )
                 text_feature = self.model.encode_text(sent_ids).to(self.device)  # text_features 1,512
                 mention_feature = self.model.encode_text(mention).to(self.device)
 
@@ -154,93 +172,23 @@ class Richpedia():
                     image_features = torch.cat(image_features_list, dim=0).to(self.device)
 
             total_feature = torch.sum(image_features, dim=0).unsqueeze(0).to(self.device)  # 1, 512
-            profile_features = torch.zeros_like(image_features).to(self.device)
 
 
-            if example.answer:
-                answer_id = example.answer
-            else:
-                answer_id = -1
 
 
             features.append(
                 InputFeatures(
-                    answer_id=answer_id,
+                    answer_id=example.answer if example.answer else -1,
                     img_id=example.img_id,
                     mentions=example.mentions,
                     key_id=example.guk,
                     text_feature=text_feature,
                     mention_feature=mention_feature,
-                    text_mask=text_mask,
-                    mention_mask=mention_mask,
                     total_feature=total_feature,
-                    segement_feature=image_features,
-                    profile_feature=profile_features
+                    segement_feature=None,
+                    caption_feature=caption_feature,
                 )
             )
         return features
 
-
-    def convert_examples_to_features_textmodel(self, examples):
-        features = []
-        for (ex_index, example) in tqdm(enumerate(examples), total=len(examples), ncols=80):
-            # Text
-            input_sent = example.mentions + " [SEP] " + example.sent
-            sent_ids = self.text_tokenizer(input_sent, truncation=True, padding='max_length', max_length=60, return_tensors='pt')
-            sent_ids = sent_ids.to(self.device)
-
-            mention = self.text_tokenizer(example.mentions, truncation=True, padding='max_length', max_length=60, return_tensors='pt')
-            mention = mention.to(self.device)
-
-            with torch.no_grad():
-                self.text_model.to(self.device)
-                text_feature = self.text_model(**sent_ids)["last_hidden_state"].to(self.device)  # text_features 1,512
-                mention_feature = self.text_model(**mention)["last_hidden_state"].to(self.device)
-                # text_outputs = self.text_model(**sent_ids)
-                # print(text_outputs.keys())
-                # exit()
-
-            # Image
-            image_features_list = []
-            with torch.no_grad():
-                for img_name in example.img_list:
-                    try:
-                        img_path = os.path.join(self.img_path, "richpedia", "images", img_name)
-                        image = Image.open(img_path)
-                        image = self.preprocess(image)
-                        image = image.unsqueeze(0).to(self.device)
-                        split_feature = self.model.encode_image(image).to(self.device)
-                        image_features_list.append(split_feature)
-                    except:
-                        pass
-                if len(image_features_list) == 0:
-                    image_features = torch.zeros(1, 512).to(self.device)
-                else:
-                    image_features = torch.cat(image_features_list, dim=0).to(self.device)
-
-            total_feature = torch.sum(image_features, dim=0).unsqueeze(0).to(self.device)  # 1, 512
-            profile_features = torch.zeros_like(image_features).to(self.device)
-
-
-            if example.answer:
-                answer_id = example.answer
-            else:
-                answer_id = -1
-
-
-            features.append(
-                InputFeatures(
-                    answer_id=answer_id,
-                    img_id=example.img_id,
-                    mentions=example.mentions,
-                    key_id=example.guk,
-                    text_feature=text_feature,
-                    mention_feature=mention_feature,
-                    text_mask=text_mask,
-                    mention_mask=mention_mask,
-                    total_feature=total_feature,
-                    segement_feature=image_features,
-                    profile_feature=profile_features
-                )
-            )
-        return features
+ 

@@ -5,8 +5,8 @@ from PIL import Image
 import clip
 from tqdm import tqdm
 
-from mlip.clip import load as clip_load
-from mlip.clip import tokenize as clip_tokenize
+from clip import load as clip_load
+from clip import tokenize as clip_tokenize
 from pixellib.torchbackend.instance import instanceSegmentation
 
 import warnings

@@ -31,15 +31,15 @@ INAME_PATTERN = re.compile("(\d+)\.")
 num_sample = 0
 
 def train_collate_fn(batch):
-    answer_id_list, mention_feature_list, text_feature_list, segement_feature_list, total_feature_list, profile_feature_list, pos_sample_list, neg_sample_list = [], [], [], [], [], [], [], []
+    answer_id_list, mention_feature_list, text_feature_list, segement_feature_list, total_feature_list, caption_feature_list, pos_sample_list, neg_sample_list = [], [], [], [], [], [], [], []
 
     for b in batch:
-        answer_id, mention_feature, text_feature, segement_feature, total_feature, profile_feature, pos_sample, neg_sample = b.values()
+        answer_id, mention_feature, text_feature, segement_feature, total_feature, caption_feature, pos_sample, neg_sample = b.values()
         mention_feature_list.append(mention_feature)
         text_feature_list.append(text_feature)
         segement_feature_list.append(segement_feature)
         total_feature_list.append(total_feature)
-        profile_feature_list.append(profile_feature)
+        caption_feature_list.append(caption_feature)
         pos_sample_list.append(pos_sample)
         neg_sample_list.append(neg_sample)
 
@@ -60,17 +60,15 @@ def train_collate_fn(batch):
     text_feature = torch.stack(text_feature_list)
     pos_sample = torch.stack(pos_sample_list)
     neg_sample = torch.stack(neg_sample_list)
+    caption_feature = torch.stack(caption_feature_list)
 
     for imf_index in range(len(segement_feature_list)):
         while segement_feature_list[imf_index].size(0) < max_size:
             segement_feature_list[imf_index] = torch.nn.functional.pad(segement_feature_list[imf_index],
                                                                        pad=(0, 0, 0, 1),
                                                                        mode='constant', value=0)
-            profile_feature_list[imf_index] = torch.nn.functional.pad(profile_feature_list[imf_index], pad=(0, 0, 0, 1),
-                                                                      mode='constant', value=0)
 
     segement_feature = torch.stack(segement_feature_list)
-    profile_feature = torch.stack(profile_feature_list)
 
 
     return {
@@ -78,22 +76,22 @@ def train_collate_fn(batch):
         "text_feature": text_feature,
         "total_feature": total_feature,
         "segement_feature": segement_feature,
-        "profile_feature": profile_feature,
+        "caption_feature": caption_feature,
         "pos": pos_sample,
         "neg": neg_sample,
     }
 
 
 def eval_collate_fn(batch):
-    answer_id_list, mention_feature_list, text_feature_list, segement_feature_list, total_feature_list, profile_feature_list, pos_sample_list, neg_sample_list, search_res_list = [], [], [], [], [], [], [], [], []
+    answer_id_list, mention_feature_list, text_feature_list, segement_feature_list, total_feature_list, caption_feature_list, pos_sample_list, neg_sample_list, search_res_list = [], [], [], [], [], [], [], [], []
 
     for b in batch:
-        answer_id, mention_feature, text_feature, segement_feature, total_feature, profile_feature, pos_sample, neg_sample, search_res = b.values()
+        answer_id, mention_feature, text_feature, segement_feature, total_feature, caption_feature, pos_sample, neg_sample, search_res = b.values()
         mention_feature_list.append(mention_feature)
         text_feature_list.append(text_feature)
         segement_feature_list.append(segement_feature)
         total_feature_list.append(total_feature)
-        profile_feature_list.append(profile_feature)
+        caption_feature_list.append(caption_feature)
         pos_sample_list.append(pos_sample)
         neg_sample_list.append(neg_sample)
         search_res_list.append(search_res)
@@ -115,24 +113,22 @@ def eval_collate_fn(batch):
     pos_sample = torch.stack(pos_sample_list)
     neg_sample = torch.stack(neg_sample_list)
     search_res = torch.stack(search_res_list)
+    caption_feature = torch.stack(caption_feature_list)
 
     for imf_index in range(len(segement_feature_list)):
         while segement_feature_list[imf_index].size(0) < max_size:
             segement_feature_list[imf_index] = torch.nn.functional.pad(segement_feature_list[imf_index],
                                                                        pad=(0, 0, 0, 1),
                                                                        mode='constant', value=0)
-            profile_feature_list[imf_index] = torch.nn.functional.pad(profile_feature_list[imf_index], pad=(0, 0, 0, 1),
-                                                                      mode='constant', value=0)
 
     segement_feature = torch.stack(segement_feature_list)
-    profile_feature = torch.stack(profile_feature_list)
 
     return {
         "mention_feature": mention_feature,
         "text_feature": text_feature,
         "total_feature": total_feature,
         "segement_feature": segement_feature,
-        "profile_feature": profile_feature,
+        "caption_feature": caption_feature,
         "pos": pos_sample,
         "neg": neg_sample,
         "search_res": search_res,
@@ -187,12 +183,11 @@ class NELDataset(Dataset):
                  all_answer_id,
                  all_mentions,
                  all_img_id,
-                 all_key_id,
                  all_mention_feature,
                  all_text_feature,
                  all_total_feature,
                  all_segement_feature,
-                 all_profile_feature,
+                 all_caption_feature,
                  answer_list,
                  contain_search_res=False):
         # text info
@@ -228,12 +223,12 @@ class NELDataset(Dataset):
         self.contain_search_res = contain_search_res
         if self.contain_search_res:
             self.search_res = json.load(
-                open(args.path_candidates, "r", encoding='utf8'))  # mention: [qid0, qid1, ..., qidn]
+                open(args.path_candidates, "r", encoding='utf8'))   # mention: [qid0, qid1, ..., qidn]
 
         self.all_text_features = all_text_feature
         self.all_total_features = all_total_feature
         self.all_segement_features = all_segement_feature
-        self.all_profile_features = all_profile_feature
+        self.all_caption_feature = all_caption_feature
 
     def __len__(self):
         return len(self.all_answer_id)
@@ -245,7 +240,7 @@ class NELDataset(Dataset):
         sample["text_feature"] = self.all_text_features[idx]
         sample['segement_feature'] = self.all_segement_features[idx]
         sample['total_feature'] = self.all_total_features[idx]
-        sample['profile_feature'] = self.all_profile_features[idx]
+        sample['caption_feature'] = self.all_caption_feature[idx]
 
         ans_id = self.all_answer_id[idx]
         if ans_id == "c":
@@ -260,7 +255,7 @@ class NELDataset(Dataset):
 
         # return search results
         if self.contain_search_res:
-            qids_searched = self.search_res[self.all_mentions[idx]][:10]
+            qids_searched = self.search_res[self.all_mentions[idx]]
             qids_searched_map = [self.neg_mapping[qid] for qid in qids_searched]
             sample["search_res"] = torch.tensor(np.array([self.entity_features[qsm] for qsm in qids_searched_map]))
             # print(sample["search_res"].size())  #Bathc_size*hidden_size 32*768
@@ -397,8 +392,8 @@ class DiverseDataset(Dataset):
         self.entity_list = json.load(open(join(args.dir_neg_feat, "entity_list.json")))  # len = 25846
         self.entity_id_mapping = {sample: i for i, sample in enumerate(self.entity_list)}
 
-        # profile_path = os.path.join(args.dir_neg_feat, "profile.h5")
-        # self.profile = h5py.File(profile_path, 'r').get("features")
+        # caption_path = os.path.join(args.dir_neg_feat, "caption.h5")
+        # self.caption = h5py.File(caption_path, 'r').get("features")
 
         entity_feat = h5py.File(join(args.dir_neg_feat, "gt_feats_brief.h5"), 'r')
         self.entity_features = entity_feat.get("features")
@@ -454,8 +449,8 @@ class PersonDataset(Dataset):
         img_list = json.load(open(join(args.dir_neg_feat, "input_img_list.json")))
         self.img_mapping = {sample: i for i, sample in enumerate(img_list)}
 
-        profile_path = os.path.join(args.dir_neg_feat, "profile.h5")
-        self.profile = h5py.File(profile_path, 'r').get("features")
+        caption_path = os.path.join(args.dir_neg_feat, "caption.h5")
+        self.caption = h5py.File(caption_path, 'r').get("features")
 
         if args.gt_type != "both":
             gt_name = "{}_entity.h5".format(args.gt_type)
@@ -486,7 +481,7 @@ class PersonDataset(Dataset):
 
         sample["answer_id"] = self.entity_mapping[self.all_answer_id[idx]]
         sample['image_feature'] = self.all_image_features[idx]
-        sample["detection"] = torch.tensor(np.array([self.profile[self.img_mapping[img_id]]]))
+        sample["detection"] = torch.tensor(np.array([self.caption[self.img_mapping[img_id]]]))
 
         if self.args.gt_type != "both":
             sample["pos"] = torch.tensor(np.array([self.entity_features[pos_sample_id]]))
@@ -508,29 +503,29 @@ class PersonDataset(Dataset):
 
 
 def load_and_cache_examples(args, tokenizer, answer_list, mode, dataset="wiki", logger=None):
+    # 0 caption 没有输入prompt
+    number = 1 # question = "Question:  Who are the characters in the picture? Answer: "
     data_processor = None
-
-    # elif args.feature_extrator == "clip":
-    if dataset == "wiki":
-        data_processor = Wikipedia()
-    elif dataset == "rich":
-        data_processor = Richpedia()
-    elif dataset == "person":
-        data_processor = Wikiperson()
-    elif dataset == "diverse":
-        data_processor = Wikidiverse()
-    else:
-        print("Specify the dataset name: wiki, rich, person, diverse")
-        exit()
-
-    # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, "cached_{}_{}_{}".format(mode, args.dataset, args.feature_extrator))
-    # entity_features_file = os.path.join(args.data_dir, "entity_{}".format(args.dataset))
+    cached_features_file = os.path.join(args.data_dir, "cached_{}_{}_{}_{}".format(mode, args.dataset, args.feature_extrator, number))
 
     guks = []
     if mode != 'test' and os.path.exists(cached_features_file) and not args.overwrite_cache:
         features = torch.load(cached_features_file)
     else:
+        # elif args.feature_extrator == "clip":
+        if dataset == "wiki":
+            data_processor = Wikipedia()
+        elif dataset == "rich":
+            data_processor = Richpedia()
+        elif dataset == "person":
+            data_processor = Wikiperson()
+        elif dataset == "diverse":
+            data_processor = Wikidiverse()
+        else:
+            print("Specify the dataset name: wiki, rich, person, diverse")
+            exit()
+
+
         logger.info("Creating features %s at %s" % (cached_features_file, args.data_dir))
 
         examples = data_processor.read_examples_from_file(args.data_dir, mode)
@@ -569,24 +564,22 @@ def load_and_cache_examples(args, tokenizer, answer_list, mode, dataset="wiki", 
         all_mention_feature = [f.mention_feature for f in features]
         all_total_feature = [f.total_feature for f in features]
         all_segement_feature = [f.segement_feature for f in features]
-        all_profile_feature = [f.profile_feature for f in features]
+        all_caption_feature = [f.caption_feature for f in features]
 
 
         all_answer_id = [f.answer_id for f in features]
         all_img_id = [f.img_id for f in features]
-        all_key_id = [f.key_id for f in features]
         all_mentions = [f.mentions for f in features]
 
         dataset = NELDataset(args,
                              all_answer_id,
                              all_mentions,
                              all_img_id,
-                             all_key_id,
                              all_mention_feature,
                              all_text_feature,
                              all_total_feature,
                              all_segement_feature,
-                             all_profile_feature,
+                             all_caption_feature,
                              answer_list,
                              contain_search_res)
     return dataset, guks
